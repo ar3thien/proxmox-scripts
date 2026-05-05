@@ -7,8 +7,6 @@ VMTYPE="${VMTYPE:-unknown}"
 
 if [ "$PHASE" != "backup-end" ]; then
     exit 0
-else
-    sleep 10
 fi
 
 # ===== GET VMNAME =====
