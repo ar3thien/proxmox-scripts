@@ -18,12 +18,9 @@ fi
 
 # ===== CONFIG =====
 LOG_FILE=$(mktemp)
-#trap 'rm -f "$LOG_FILE"' EXIT
 RCLONE_BIN="/usr/bin/rclone"
-#RCLONE_LOG="--log-file $LOG_FILE --log-level INFO"
 RCLONE_LOG=(--log-file "$LOG_FILE" --log-level INFO)
 RCLONE_CONFIG="/root/.config/rclone/rclone.conf"
-#--log-file-max-size 10M --log-file-max-backups 3 
 
 # ===== FUNCTIONS =====
 log() {
@@ -56,12 +53,6 @@ log_rclone_result() {
     echo "$exit_desc"
 }
 
-# ===== STEP 0: Ensure log file exists =====
-#if [ ! -f "$LOG_FILE" ]; then
-#    touch "$LOG_FILE"
-#    chmod 644 "$LOG_FILE"
-#fi
-
 # ===== STEP 1: Log start =====
 log "===== SCRIPT START ====="
 log "Phase=$PHASE VMNAME=$VMNAME VMID=$VMID VMTYPE=$VMTYPE Mode=$MODE DumpDir=$DUMPDIR"
@@ -73,7 +64,22 @@ log "Checking rclone update..."
 UPDATE_EXIT=$?
 UPDATE_DESC=$(log_rclone_result "$UPDATE_EXIT" "selfupdate")
 
-# ===== STEP 3: Run rclone sync (ONLY ONCE) =====
+# ===== STEP 3.1: Get gdrive usage before pre-sync =====
+RCLONE_ABOUT=$("$RCLONE_BIN" --config "$RCLONE_CONFIG" about gdrive_union:)
+TOTAL=$(echo "$RCLONE_ABOUT" | awk '/^Total:/ {print $2}')
+USED=$(echo "$RCLONE_ABOUT" | awk '/^Used:/  {print $2}')
+FREE=$(echo "$RCLONE_ABOUT" | awk '/^Free:/  {print $2}')
+
+# percentage (FLOAT SAFE)
+FREE_PCT=$(awk -v f="$FREE" -v t="$TOTAL" \
+    'BEGIN { if (t > 0) printf "%.1f", (f * 100 / t); else print 0 }')
+
+USED_PCT=$(awk -v f="$USED" -v t="$TOTAL" \
+    'BEGIN { if (t > 0) printf "%.1f", (f * 100 / t); else print 0 }')
+
+log "Google Drive pre-sync usage: Total=$TOTAL GB, Used=$USED GB ($USED_PCT%), Free=$FREE GB ($FREE_PCT%)"
+
+# ===== STEP 3.2: Run rclone sync =====
 log "Starting rclone sync..."
 
 "$RCLONE_BIN" sync /var/lib/vz/dump gdrive_union:/pvebackup/PVE2 \
@@ -89,6 +95,22 @@ log "Starting rclone sync..."
     "${RCLONE_LOG[@]}" 
 SYNC_EXIT=$?
 SYNC_DESC=$(log_rclone_result "$SYNC_EXIT" "sync")
+
+# ===== STEP 3.3: Get gdrive usage before post-sync =====
+RCLONE_ABOUT=$("$RCLONE_BIN" --config "$RCLONE_CONFIG" about gdrive_union:)
+
+TOTAL=$(echo "$RCLONE_ABOUT" | awk '/^Total:/ {print $2}')
+USED=$(echo "$RCLONE_ABOUT" | awk '/^Used:/  {print $2}')
+FREE=$(echo "$RCLONE_ABOUT" | awk '/^Free:/  {print $2}')
+
+# percentage (FLOAT SAFE)
+FREE_PCT=$(awk -v f="$FREE" -v t="$TOTAL" \
+    'BEGIN { if (t > 0) printf "%.1f", (f * 100 / t); else print 0 }')
+
+USED_PCT=$(awk -v f="$USED" -v t="$TOTAL" \
+    'BEGIN { if (t > 0) printf "%.1f", (f * 100 / t); else print 0 }')
+
+log "Google Drive post-sync usage: Total=$TOTAL GB, Used=$USED GB ($USED_PCT%), Free=$FREE GB ($FREE_PCT%)"
 
 # ===== STEP 4: End log =====
 log "===== SCRIPT END ====="
